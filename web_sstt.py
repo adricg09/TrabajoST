@@ -51,6 +51,15 @@ def cerrar_conexion(cs):
     cs.close()
 
 
+def enviar_objeto(route, cs):
+    file = open(route, "rb")
+    obj = file.read(BUFSIZE)
+    while obj:
+        cs.send(obj)
+        obj = file.read(BUFSIZE)
+    file.close()
+
+
 def process_cookies(headers,  cs):
     """ Esta función procesa la cookie cookie_counter
         1. Se analizan las cabeceras en headers para buscar la cabecera Cookie
@@ -122,13 +131,13 @@ def process_web_request(cs, webroot):
             request_line = lista_cabeceras[0].strip()
             partes = request_line.split()
 
-            if len(partes) != 3:
+            if not len(partes) == 3:
                 print("Error 400 Bad Request")
                 route = webroot + "/error400.html"
                 return
             
             method, url, version = partes
-            
+
             # *Devuelve una lista con los atributos de las cabeceras.
             for cabeceras in lista_cabeceras:
                 print(cabeceras)
@@ -160,9 +169,7 @@ def process_web_request(cs, webroot):
             if not os.path.isfile(ruta_absoluta):
                 print("Error 404 Not Found")
                 route = webroot + "/error404.html"
-                
                 return
-            
 
 def main():
     """ Función principal del servidor
