@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger()
 
 def enviar_mensaje(cs, data):
-    """ Esta función envía datos (data) a través del socket cs
+    """ Esta función envía datos (data) a través del socket cs+
         Devuelve el número de bytes enviados.
     """
     return cs.send(data)
@@ -68,7 +68,26 @@ def process_cookies(headers,  cs):
         4. Si se encuentra y tiene el valor MAX_ACCESSOS se devuelve MAX_ACCESOS
         5. Si se encuentra y tiene un valor 1 <= x < MAX_ACCESOS se incrementa en 1 y se devuelve el valor
     """
-    pass
+    cookie_header = None
+    for h in headers[1:]:
+        if h == "":
+            break
+        if h.lower().startswith("cookie:"):
+            cookie_header = h
+            break
+
+    if cookie_header is None:
+        return 1  
+    m = re.search(r'cookie_counter=(\d+)', cookie_header)
+    if not m:
+        return 1
+   
+    valor = int(m.group(1))
+
+    if valor >= MAX_ACCESOS:
+        return MAX_ACCESOS
+    
+    return valor + 1
 
 
 def process_web_request(cs, webroot):
@@ -147,28 +166,28 @@ def process_web_request(cs, webroot):
 
             if version != "HTTP/1.1":
                 print("Error 505 HTTP Version Not Supported")
-                route = webroot + "/error505.html"
+                route = f"{webroot}/error505.html"
                 return
             
             if method != "GET":
                 print("Error 405 Method Not Allowed")
-                route = webroot + "/error405.html"
+                route = f"{webroot}/error405.html"
                 return
 
             # * Leer URL y eliminar parámetros si los hubiera
             route = url.split("?",1)[0]
 
             # * Comprobar si el recurso solicitado es /, En ese caso el recurso es index.html
-            if route == "/":
-                route = "/index.html"
+            if route == f"/":
+                route = f"/index.html"
             
             # * Construir la ruta absoluta del recurso (webroot + recurso solicitado)
-            ruta_absoluta = webroot + route
+            ruta_absoluta = f"{webroot}{route}"
             
             # * Comprobar que el recurso (fichero) existe, si no devolver Error 404 "Not found"
             if not os.path.isfile(ruta_absoluta):
                 print("Error 404 Not Found")
-                route = webroot + "/error404.html"
+                route = f"{webroot}/error404.html"
                 return
 
 def main():
