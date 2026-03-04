@@ -20,6 +20,7 @@ BUFSIZE = 8192 # Tamaño máximo del buffer que se puede utilizar
 TIMEOUT_CONNECTION = 30 # Timout para la conexión persistente
 MAX_ACCESOS = 10
 CORREO=re.compile('adrian.cuervog%40um.es|ds.anishchenkohalkina%40um.es')
+FORMATO = re.compile('GET')
 
 # Extensiones admitidas (extension, name in HTTP)
 filetypes = {"gif":"image/gif", "jpg":"image/jpg", "jpeg":"image/jpeg", "png":"image/png", "htm":"text/htm", 
@@ -31,8 +32,111 @@ logging.basicConfig(level=logging.INFO,
                     datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger()
 
+def error_400(route):
+    #Error Bad Request
+    length  = os.stat(route).st_size
+    root, ext = os.path.splitext(route)
+    type = filetypes[ext[1:]]
+    mensaje = 'HTTP/1.1 400 Bad Request\r\n'\
+    'Connection: Close\r\n'\
+    'Content-Length: ' + str(length) + '\r\n'\
+    'Content-Type: ' + type + '\r\n'\
+    '\r\n'
+    return mensaje.encode()
+
+def error_403(route):
+    #Error Forbiden
+    length = os.stat(route).st_size
+    root, ext = os.path.splitext(route)
+    type = filetypes[ext[1:]]
+    mensaje = 'HTTP/1.1 403 Forbiden\r\n'\
+    'Connection: Close\r\n'\
+    'Content-Length: ' + str(length) + '\r\n'\
+    'Content-Type: ' + type + '\r\n'\
+    '\r\n'
+    return mensaje.encode()
+
+def error_404(route):
+    #Error Not-Found
+    length = os.stat(route).st_size
+    root, ext = os.path.splitext(route)
+    type = filetypes[ext[1:]]
+    mensaje = 'HTTP/1.1 404 Not Found\r\n'\
+    'Connection: Close\r\n'\
+    'Content-Length: ' + str(length) + '\r\n'\
+    'Content-Type: ' + type + '\r\n'\
+    '\r\n'
+    return mensaje.encode()
+
+def error_405(route):
+    #Method not allowed
+    length = os.stat(route).st_size
+    root, ext = os.path.splitext(route)
+    type = filetypes[ext[1:]]
+    mensaje = 'HTTP/1.1 405 Method Not Allowed\r\n'\
+    'Connection: Close\r\n'\
+    'Content-Length: ' + str(length) + '\r\n'\
+    'Content-Type: ' + type + '\r\n'\
+    '\r\n'
+    return mensaje.encode()
+
+def error_505(route):
+    #HTTP Version Not Supported
+    length = os.stat(route).st_size
+    root, ext = os.path.splitext(route)
+    type = filetypes[ext[1:]]
+    mensaje = 'HTTP/1.1 505 HTTP Version Not Supported\r\n'\
+    'Connection: Close\r\n'\
+    'Content-Length: ' + str(length) + '\r\n'\
+    'Content-Type: ' + type + '\r\n'\
+    '\r\n'
+    return mensaje.encode()
+
+def crear_respuesta(route):
+    dt_mod = datetime.fromtimestamp(os.path.getmtime(route)).strftime('%a, %d %b %Y %H:%M:%S GMT')
+    length = os.stat(route).st_size
+    root, ext = os.path.splitext(route)
+    type = filetypes[ext[1:]]
+
+    mensaje = 'HTTP/1.1 200 OK\r\n'\
+    'Date: ' + datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT') + '\r\n'\
+    'Server: web.cazaBugs1991.org \r\n'\
+    'Last-Modified: ' + dt_mod + '\r\n'\
+    'Content-Length: ' + str(length) + '\r\n'\
+    'Keep-Alive: timeout=' + str(TIMEOUT_CONNECTION) + ', max=' + str(MAX_ACCESOS) + '\r\n'\
+    'Connection: Keep-Alive\r\n'\
+    'Content-Type: ' + str(type) + '\r\n'\
+    '\r\n'
+    return mensaje.encode()
+
+def crear_respuesta_index(route, counter):
+    dt_mod = datetime.fromtimestamp(os.path.getmtime(route)).strftime('%a, %d %b %Y %H:%M:%S GMT')
+    length = os.stat(route).st_size
+    root, ext = os.path.splitext(route)
+    type = filetypes[ext[1:]]
+
+    mensaje = 'HTTP/1.1 200 OK\r\n'\
+    'Date: ' + datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT') + '\r\n'\
+    'Server: web.cazaBugs1991.org \r\n'\
+    'Last-Modified: ' + dt_mod + '\r\n'\
+    'Content-Length: ' + str(length) + '\r\n'\
+    'Keep-Alive: timeout=' + str(TIMEOUT_CONNECTION) + ', max=' + str(MAX_ACCESOS) + '\r\n'\
+    'Connection: Keep-Alive\r\n'\
+    'Content-Type: ' + str(type) + '\r\n'\
+    'Set-Cookie: cookie_counter_1991=' + str(counter) + '; max-age=30\r\n'\
+    '\r\n'
+    return mensaje.encode()
+
+def enviar_objeto(sourte, cs):
+    file = open(route, 'rb')
+    objeto = file.read(BUFSIZE)
+    while objeto:
+        socket.send(objeto)
+        objeto = file.read(BUFSIZE)
+    file.close()
+
 def enviar_mensaje(cs, data):
-    """ Esta función envía datos (data) a través del socket cs+
+    """ Esta función envía datos (data) a través del socket cs
         Devuelve el número de bytes enviados.
     """
     return cs.send(data)
@@ -49,15 +153,7 @@ def cerrar_conexion(cs):
     """ Esta función cierra una conexión activa.
     """
     cs.close()
-
-
-def enviar_objeto(route, cs):
-    file = open(route, "rb")
-    obj = file.read(BUFSIZE)
-    while obj:
-        cs.send(obj)
-        obj = file.read(BUFSIZE)
-    file.close()
+    print("Cerrando conexion")
 
 
 def process_cookies(headers,  cs):
@@ -77,118 +173,158 @@ def process_cookies(headers,  cs):
             break
 
     if cookie_header is None:
-        return 1  
-    m = re.search(r'cookie_counter=(\d+)', cookie_header)
+        return 1
+
+    m = re.search(r'cookie_counter_1991=(\d+)', cookie_header)
     if not m:
         return 1
-   
-    valor = int(m.group(1))
 
+    valor = int(m.group(1))
     if valor >= MAX_ACCESOS:
         return MAX_ACCESOS
-    
     return valor + 1
 
-
 def process_web_request(cs, webroot):
-    """ Procesamiento principal de los mensajes recibidos.
-        Típicamente se seguirá un procedimiento similar al siguiente (aunque el alumno puede modificarlo si lo desea)
-
-        * Bucle para esperar hasta que lleguen datos en la red a través del socket cs con select()
-
-            * Se comprueba si hay que cerrar la conexión por exceder TIMEOUT_CONNECTION segundos
-              sin recibir ningún mensaje o hay datos. Se utiliza select.select
-
-            * Si no es por timeout y hay datos en el socket cs.
-                * Leer los datos con recv.
-                * Analizar que la línea de solicitud y comprobar está bien formateada según HTTP 1.1
-                    * Devuelve una lista con los atributos de las cabeceras.
-                    * Comprobar si la versión de HTTP es 1.1
-                    * Comprobar si es un método GET o POST. Si no devolver un error Error 405 "Method Not Allowed".
-                    * Leer URL y eliminar parámetros si los hubiera
-                    * Comprobar si el recurso solicitado es /, En ese caso el recurso es index.html
-                    * Construir la ruta absoluta del recurso (webroot + recurso solicitado)
-                    * Comprobar que el recurso (fichero) existe, si no devolver Error 404 "Not found"
-                    * Analizar las cabeceras. Imprimir cada cabecera y su valor. Si la cabecera es Cookie comprobar
-                      el valor de cookie_counter para ver si ha llegado a MAX_ACCESOS.
-                      Si se ha llegado a MAX_ACCESOS devolver un Error "403 Forbidden"
-                    * Obtener el tamaño del recurso en bytes.
-                    * Extraer extensión para obtener el tipo de archivo. Necesario para la cabecera Content-Type
-                    * Preparar respuesta con código 200. Construir una respuesta que incluya: la línea de respuesta y
-                      las cabeceras Date, Server, Connection, Set-Cookie (para la cookie cookie_counter),
-                      Content-Length y Content-Type.
-                    * Leer y enviar el contenido del fichero a retornar en el cuerpo de la respuesta.
-                    * Se abre el fichero en modo lectura y modo binario
-                        * Se lee el fichero en bloques de BUFSIZE bytes (8KB)
-                        * Cuando ya no hay más información para leer, se corta el bucle
-
-            * Si es por timeout, se cierra el socket tras el período de persistencia.
-                * NOTA: Si hay algún error, enviar una respuesta de error con una pequeña página HTML que informe del error.
-    """
+    """ Procesamiento principal de los mensajes recibidos. """
     rlist = [cs]
     wlist = []
-    
+
     # * Bucle para esperar hasta que lleguen datos en la red a través del socket cs con select()
     while rlist:
-        rsublist, wsublist, xsublist = select.select(rlist, wlist,[], TIMEOUT_CONNECTION)
-        
+        rsublist, wsublist, xsublist = select.select(rlist, wlist, [], TIMEOUT_CONNECTION)
+
         # * Se comprueba si hay que cerrar la conexión por exceder TIMEOUT_CONNECTION segundos
-        #   sin recibir ningún mensaje o hay datos. Se utiliza select.selects
         if not (wsublist or rsublist or xsublist):
-            print("TIMEOUT")
-            return
-        
+            print("TIMEOUT - Cerrando conexión persistente por inactividad.")
+            return # Salimos para que el proceso cierre el socket
+
         # * Leer los datos con recv.
-        for socket in rsublist:
-            datos = recibir_mensaje(socket)
+        for socket_client in rsublist:
+            datos = recibir_mensaje(socket_client)
             if not datos:
+                # El cliente ha cerrado la conexión desde su lado
                 return
-            str_datos = datos.decode()
+
+            str_datos = datos.decode('utf-8', errors='ignore')
             lista_cabeceras = str_datos.split("\r\n")
 
-            # * Analizar que la línea de solicitud y comprobar está bien formateada según HTTP 1.1
+            if not lista_cabeceras or lista_cabeceras[0] == "":
+                continue
+
+            # * Analizar que la línea de solicitud está bien formateada
             request_line = lista_cabeceras[0].strip()
             partes = request_line.split()
 
-            if not len(partes) == 3:
+            if len(partes) != 3:
                 print("Error 400 Bad Request")
-                route = webroot + "/error400.html"
+                ruta_absoluta = webroot + "/400.html"
+                if os.path.isfile(ruta_absoluta):
+                    enviar_mensaje(cs, error_400(ruta_absoluta))
+                    with open(ruta_absoluta, 'rb') as f:
+                        enviar_mensaje(cs, f.read())
                 return
-            
+
             method, url, version = partes
 
-            # *Devuelve una lista con los atributos de las cabeceras.
+            # * Imprimir cabeceras para depuración
             for cabeceras in lista_cabeceras:
                 print(cabeceras)
 
-            #* Comprobar si la versión de HTTP es 1.1
-            # * Comprobar si es un método GET o POST. Si no devolver un error Error 405 "Method Not Allowed".
-
+            # * Comprobar versión HTTP y Método
             if version != "HTTP/1.1":
                 print("Error 505 HTTP Version Not Supported")
-                route = f"{webroot}/error505.html"
+                ruta_absoluta = webroot + "/505.html"
+                if os.path.isfile(ruta_absoluta):
+                    enviar_mensaje(cs, error_505(ruta_absoluta))
+                    with open(ruta_absoluta, 'rb') as f:
+                        enviar_mensaje(cs, f.read())
                 return
-            
+
             if method != "GET":
                 print("Error 405 Method Not Allowed")
-                route = f"{webroot}/error405.html"
+                ruta_absoluta = webroot + "/405.html"
+                if os.path.isfile(ruta_absoluta):
+                    enviar_mensaje(cs, error_405(ruta_absoluta))
+                    with open(ruta_absoluta, 'rb') as f:
+                        enviar_mensaje(cs, f.read())
                 return
 
-            # * Leer URL y eliminar parámetros si los hubiera
-            route = url.split("?",1)[0]
+            # * Leer URL y separar parámetros
+            partes_url = url.split("?", 1)
+            route = partes_url[0]
+            parametros = partes_url[1] if len(partes_url) > 1 else None
 
-            # * Comprobar si el recurso solicitado es /, En ese caso el recurso es index.html
-            if route == f"/":
-                route = f"/index.html"
-            
-            # * Construir la ruta absoluta del recurso (webroot + recurso solicitado)
-            ruta_absoluta = f"{webroot}{route}"
-            
-            # * Comprobar que el recurso (fichero) existe, si no devolver Error 404 "Not found"
+            if parametros and "email=" in parametros:
+                match = re.search(r'email=([^&]+)', parametros)
+                if match:
+                    correo_recibido = match.group(1)
+                    if CORREO.search(correo_recibido):
+                        print("Formulario: Correo válido")
+                        ruta_absoluta = webroot + "/correo_valido.html"
+                    else:
+                        print("Formulario: Correo inválido")
+                        ruta_absoluta = webroot + "/correo_invalido.html"
+
+                    # Estructura idéntica a tus bloques de error
+                    if os.path.isfile(ruta_absoluta):
+                        enviar_mensaje(cs, crear_respuesta(ruta_absoluta))
+                        with open(ruta_absoluta, 'rb') as f:
+                            enviar_mensaje(cs, f.read())
+                    else:
+                        print("Faltan los archivos html del correo en el webroot")
+            # * Comprobar si el recurso solicitado es /
+            if route == "/":
+                route = "/index.html"
+
+            # * Construir la ruta absoluta
+            ruta_absoluta = webroot + route
+
+            # * Comprobar que el recurso existe
             if not os.path.isfile(ruta_absoluta):
-                print("Error 404 Not Found")
-                route = f"{webroot}/error404.html"
+                print(f"Error 404 Not Found: {ruta_absoluta}")
+                ruta_absoluta = webroot + "/404.html"
+                if os.path.isfile(ruta_absoluta):
+                    enviar_mensaje(cs, error_404(ruta_absoluta))
+                    with open(ruta_absoluta, 'rb') as f:
+                        enviar_mensaje(cs, f.read())
                 return
+
+            # * Procesamiento de cookies SOLO si el recurso es index.html
+            cookie_counter = 1
+            if route == "/index.html":
+                cookie_counter = process_cookies(lista_cabeceras, cs)
+                if cookie_counter >= MAX_ACCESOS:
+                    print("Error 403 Forbidden - Maximos accesos alcanzados")
+                    ruta_absoluta_403 = webroot + "/403.html"
+                    if os.path.isfile(ruta_absoluta_403):
+                        enviar_mensaje(cs, error_403(ruta_absoluta_403))
+                        with open(ruta_absoluta_403, 'rb') as f:
+                            enviar_mensaje(cs, f.read())
+                    return
+
+            # * Obtener tamaño y tipo de archivo
+            length = os.stat(ruta_absoluta).st_size
+            tipo_ext = route.split(".")[-1]
+            content_type = filetypes.get(tipo_ext, "application/octet-stream")
+
+            # * Enviar cabeceras de respuesta
+            if route == "/index.html":
+                enviar_mensaje(cs, crear_respuesta_index(ruta_absoluta, cookie_counter))
+            else:
+                enviar_mensaje(cs, crear_respuesta(ruta_absoluta))
+
+            # * Enviar archivo en bloques
+            with open(ruta_absoluta, 'rb') as f:
+                remaining = length
+                while remaining:
+                    chunk_size = min(remaining, BUFSIZE)
+                    buf = f.read(chunk_size)
+                    if not buf:
+                        break
+                    enviar_mensaje(cs, buf)
+                    remaining -= chunk_size
+            print('\n')
+
 
 def main():
     """ Función principal del servidor
@@ -230,12 +366,12 @@ def main():
             conn, addr = server_socket.accept()
             pid = os.fork()
             if pid == 0:
-                cerrar_conexion(server_socket)
+                server_socket.close()
                 process_web_request(conn, args.webroot)
                 cerrar_conexion(conn)
                 break
             else:
-                cerrar_conexion(conn)
+                conn.close()
     except KeyboardInterrupt:
         True
 
