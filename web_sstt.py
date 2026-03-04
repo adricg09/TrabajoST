@@ -24,7 +24,7 @@ FORMATO = re.compile('GET')
 
 # Extensiones admitidas (extension, name in HTTP)
 filetypes = {"gif":"image/gif", "jpg":"image/jpg", "jpeg":"image/jpeg", "png":"image/png", "htm":"text/htm", 
-             "html":"text/html", "css":"text/css", "js":"text/js"}
+             "html":"text/html", "css":"text/css", "js":"text/js", "ico":"image/x-icon"}
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO,
