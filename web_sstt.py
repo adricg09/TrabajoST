@@ -366,7 +366,7 @@ def main():
             conn, addr = server_socket.accept()
             pid = os.fork()
             if pid == 0:
-                server_socket.close()
+                server_socket.close() #
                 process_web_request(conn, args.webroot)
                 cerrar_conexion(conn)
                 break
