@@ -247,7 +247,7 @@ def process_web_request(cs, webroot):
                 if h.lower().startswith("host:"):
                     host_header = h
                     break
-            
+
             if not host_header:
                 print("Error 400 Bad Request - Missing Host Header")
                 ruta_absoluta = webroot + "/400.html"
