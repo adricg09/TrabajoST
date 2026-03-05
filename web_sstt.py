@@ -127,13 +127,6 @@ def crear_respuesta_index(route, counter):
     '\r\n'
     return mensaje.encode()
 
-def enviar_objeto(sourte, cs):
-    file = open(route, 'rb')
-    objeto = file.read(BUFSIZE)
-    while objeto:
-        socket.send(objeto)
-        objeto = file.read(BUFSIZE)
-    file.close()
 
 def enviar_mensaje(cs, data):
     """ Esta función envía datos (data) a través del socket cs
