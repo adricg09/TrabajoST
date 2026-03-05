@@ -241,6 +241,21 @@ def process_web_request(cs, webroot):
                     with open(ruta_absoluta, 'rb') as f:
                         enviar_mensaje(cs, f.read())
                 return
+            
+            host_header = None
+            for h in lista_cabeceras:
+                if h.lower().startswith("host:"):
+                    host_header = h
+                    break
+            
+            if not host_header:
+                print("Error 400 Bad Request - Missing Host Header")
+                ruta_absoluta = webroot + "/400.html"
+                if os.path.isfile(ruta_absoluta):
+                    enviar_mensaje(cs, error_400(ruta_absoluta))
+                    with open(ruta_absoluta, 'rb') as f:
+                        enviar_mensaje(cs, f.read())
+                return
 
             # * Leer URL y separar parámetros
             partes_url = url.split("?", 1)
@@ -294,6 +309,8 @@ def process_web_request(cs, webroot):
                         with open(ruta_absoluta_403, 'rb') as f:
                             enviar_mensaje(cs, f.read())
                     return
+                
+                
 
             # * Obtener tamaño y tipo de archivo
             length = os.stat(ruta_absoluta).st_size
