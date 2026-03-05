@@ -99,7 +99,7 @@ def crear_respuesta(route):
     type = filetypes[ext[1:]]
 
     mensaje = 'HTTP/1.1 200 OK\r\n'\
-    'Date: ' + datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT') + '\r\n'\
+    'Date: ' + datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT') + '\r\n'\
     'Server: web.cazaBugs1991.org \r\n'\
     'Last-Modified: ' + dt_mod + '\r\n'\
     'Content-Length: ' + str(length) + '\r\n'\
@@ -116,7 +116,7 @@ def crear_respuesta_index(route, counter):
     type = filetypes[ext[1:]]
 
     mensaje = 'HTTP/1.1 200 OK\r\n'\
-    'Date: ' + datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT') + '\r\n'\
+    'Date: ' + datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT') + '\r\n'\
     'Server: web.cazaBugs1991.org \r\n'\
     'Last-Modified: ' + dt_mod + '\r\n'\
     'Content-Length: ' + str(length) + '\r\n'\
@@ -184,139 +184,147 @@ def process_web_request(cs, webroot):
 
     # * Bucle para esperar hasta que lleguen datos en la red a través del socket cs con select()
     while rlist:
-        rsublist, wsublist, xsublist = select.select(rlist, wlist, [], TIMEOUT_CONNECTION)
+        rsublist, wsublist, xsublist = select.select(rlist, wlist, rlist, TIMEOUT_CONNECTION)
 
         # * Se comprueba si hay que cerrar la conexión por exceder TIMEOUT_CONNECTION segundos
-        if not (wsublist or rsublist or xsublist):
+        if not rsublist and not wsublist and not xsublist:
             print("TIMEOUT - Cerrando conexión persistente por inactividad.")
             return # Salimos para que el proceso cierre el socket
 
         # * Leer los datos con recv.
-        for socket_client in rsublist:
-            datos = recibir_mensaje(socket_client)
-            if not datos:
-                # El cliente ha cerrado la conexión desde su lado
-                return
+        else:
+            for socket_client in rsublist:
+                datos = recibir_mensaje(socket_client)
+                str_datos = datos.decode()
+                lista_cabeceras = str_datos.split("\r\n")
+                # * Imprimir cabeceras para depuración
+                for cabeceras in lista_cabeceras:
+                    print(cabeceras)
 
-            str_datos = datos.decode('utf-8', errors='ignore')
-            lista_cabeceras = str_datos.split("\r\n")
+                # * Analizar que la línea de solicitud está bien formateada
+                request_line = lista_cabeceras[0].strip()
+                partes = request_line.split()
 
-            if not lista_cabeceras or lista_cabeceras[0] == "":
-                continue
-
-            # * Analizar que la línea de solicitud está bien formateada
-            request_line = lista_cabeceras[0].strip()
-            partes = request_line.split()
-
-            if len(partes) != 3:
-                print("Error 400 Bad Request")
-                ruta_absoluta = webroot + "/400.html"
-                if os.path.isfile(ruta_absoluta):
-                    enviar_mensaje(cs, error_400(ruta_absoluta))
-                    with open(ruta_absoluta, 'rb') as f:
-                        enviar_mensaje(cs, f.read())
-                return
-
-            method, url, version = partes
-
-            # * Imprimir cabeceras para depuración
-            for cabeceras in lista_cabeceras:
-                print(cabeceras)
-
-            # * Comprobar versión HTTP y Método
-            if version != "HTTP/1.1":
-                print("Error 505 HTTP Version Not Supported")
-                ruta_absoluta = webroot + "/505.html"
-                if os.path.isfile(ruta_absoluta):
-                    enviar_mensaje(cs, error_505(ruta_absoluta))
-                    with open(ruta_absoluta, 'rb') as f:
-                        enviar_mensaje(cs, f.read())
-                return
-
-            if method != "GET":
-                print("Error 405 Method Not Allowed")
-                ruta_absoluta = webroot + "/405.html"
-                if os.path.isfile(ruta_absoluta):
-                    enviar_mensaje(cs, error_405(ruta_absoluta))
-                    with open(ruta_absoluta, 'rb') as f:
-                        enviar_mensaje(cs, f.read())
-                return
-
-            # * Leer URL y separar parámetros
-            partes_url = url.split("?", 1)
-            route = partes_url[0]
-            parametros = partes_url[1] if len(partes_url) > 1 else None
-
-            if parametros and "email=" in parametros:
-                match = re.search(r'email=([^&]+)', parametros)
-                if match:
-                    correo_recibido = match.group(1)
-                    if CORREO.search(correo_recibido):
-                        print("Formulario: Correo válido")
-                        ruta_absoluta = webroot + "/correo_valido.html"
-                    else:
-                        print("Formulario: Correo inválido")
-                        ruta_absoluta = webroot + "/correo_invalido.html"
-
-                    # Estructura idéntica a tus bloques de error
+                if len(partes) != 3:
+                    print("Error 400 Bad Request")
+                    ruta_absoluta = webroot + "/400.html"
                     if os.path.isfile(ruta_absoluta):
-                        enviar_mensaje(cs, crear_respuesta(ruta_absoluta))
+                        enviar_mensaje(cs, error_400(ruta_absoluta))
                         with open(ruta_absoluta, 'rb') as f:
-                            enviar_mensaje(cs, f.read())
-                    else:
-                        print("Faltan los archivos html del correo en el webroot")
-            # * Comprobar si el recurso solicitado es /
-            if route == "/":
-                route = "/index.html"
-
-            # * Construir la ruta absoluta
-            ruta_absoluta = webroot + route
-
-            # * Comprobar que el recurso existe
-            if not os.path.isfile(ruta_absoluta):
-                print("Error 404 Not Found:" + ruta_absoluta)
-                ruta_absoluta = webroot + "/404.html"
-                if os.path.isfile(ruta_absoluta):
-                    enviar_mensaje(cs, error_404(ruta_absoluta))
-                    with open(ruta_absoluta, 'rb') as f:
-                        enviar_mensaje(cs, f.read())
-                return
-
-            # * Procesamiento de cookies SOLO si el recurso es index.html
-            cookie_counter = 0
-            if route == "/index.html":
-                cookie_counter = process_cookies(lista_cabeceras, cs)
-                if cookie_counter > MAX_ACCESOS:
-                    print("Error 403 Forbidden - Maximos accesos alcanzados")
-                    ruta_absoluta_403 = webroot + "/403.html"
-                    if os.path.isfile(ruta_absoluta_403):
-                        enviar_mensaje(cs, error_403(ruta_absoluta_403))
-                        with open(ruta_absoluta_403, 'rb') as f:
                             enviar_mensaje(cs, f.read())
                     return
 
-            # * Obtener tamaño y tipo de archivo
-            length = os.stat(ruta_absoluta).st_size
-            tipo_ext = route.split(".")[-1]
-            content_type = filetypes.get(tipo_ext, "application/octet-stream")
-
-            # * Enviar cabeceras de respuesta
-            if route == "/index.html":
-                enviar_mensaje(cs, crear_respuesta_index(ruta_absoluta, cookie_counter))
-            else:
-                enviar_mensaje(cs, crear_respuesta(ruta_absoluta))
-
-            # * Enviar archivo en bloques
-            with open(ruta_absoluta, 'rb') as f:
-                remaining = length
-                while remaining:
-                    chunk_size = min(remaining, BUFSIZE)
-                    buf = f.read(chunk_size)
-                    if not buf:
+                host_header = None
+                for h in lista_cabeceras:
+                    if h.lower().startswith("host:"):
+                        host_header = h
                         break
-                    enviar_mensaje(cs, buf)
-                    remaining -= chunk_size
-            print('\n')
+
+                if not host_header:
+                    print("Error 400 Bad Request - Missing Host header")
+                    ruta_absoluta = webroot + "/400.html"
+                    if os.path.isfile(ruta_absoluta):
+                        enviar_mensaje(cs, error_400(ruta_absoluta))
+                        with open(ruta_absoluta, 'rb') as f:
+                            enviar_mensaje(cs, f.read())
+                    return
+
+                method, url, version = partes
+
+                # * Comprobar versión HTTP y Método
+                if version != "HTTP/1.1":
+                    print("Error 505 HTTP Version Not Supported")
+                    ruta_absoluta = webroot + "/505.html"
+                    if os.path.isfile(ruta_absoluta):
+                        enviar_mensaje(cs, error_505(ruta_absoluta))
+                        with open(ruta_absoluta, 'rb') as f:
+                            enviar_mensaje(cs, f.read())
+                    return
+
+                if method != "GET":
+                    print("Error 405 Method Not Allowed")
+                    ruta_absoluta = webroot + "/405.html"
+                    if os.path.isfile(ruta_absoluta):
+                        enviar_mensaje(cs, error_405(ruta_absoluta))
+                        with open(ruta_absoluta, 'rb') as f:
+                            enviar_mensaje(cs, f.read())
+                    return
+
+                # * Leer URL y separar parámetros
+                partes_url = url.split("?", 1)
+                route = partes_url[0]
+                parametros = partes_url[1] if len(partes_url) > 1 else None
+
+                if parametros and "email=" in parametros:
+                    match = re.search(r'email=([^&]+)', parametros)
+                    if match:
+                        correo_recibido = match.group(1)
+                        if CORREO.search(correo_recibido):
+                            print("Formulario: Correo válido")
+                            ruta_absoluta = webroot + "/correo_valido.html"
+                        else:
+                            print("Formulario: Correo inválido")
+                            ruta_absoluta = webroot + "/correo_invalido.html"
+
+                        # Estructura idéntica a tus bloques de error
+                        if os.path.isfile(ruta_absoluta):
+                            enviar_mensaje(cs, crear_respuesta(ruta_absoluta))
+                            with open(ruta_absoluta, 'rb') as f:
+                                enviar_mensaje(cs, f.read())
+                        else:
+                            print("Faltan los archivos html del correo en el webroot")
+                # * Comprobar si el recurso solicitado es /
+                if route == "/":
+                    route = "/index.html"
+
+                # * Construir la ruta absoluta
+                ruta_absoluta = webroot + route
+
+                # * Comprobar que el recurso existe
+                if not os.path.isfile(ruta_absoluta):
+                    print("Error 404 Not Found:" + ruta_absoluta)
+                    ruta_absoluta = webroot + "/404.html"
+                    if os.path.isfile(ruta_absoluta):
+                        enviar_mensaje(cs, error_404(ruta_absoluta))
+                        with open(ruta_absoluta, 'rb') as f:
+                            enviar_mensaje(cs, f.read())
+                    return
+
+                # * Procesamiento de cookies SOLO si el recurso es index.html
+                cookie_counter = 0
+                if route == "/index.html":
+                    cookie_counter = process_cookies(lista_cabeceras, cs)
+                    if cookie_counter > MAX_ACCESOS:
+                        print("Error 403 Forbidden - Maximos accesos alcanzados")
+                        ruta_absoluta_403 = webroot + "/403.html"
+                        if os.path.isfile(ruta_absoluta_403):
+                            enviar_mensaje(cs, error_403(ruta_absoluta_403))
+                            with open(ruta_absoluta_403, 'rb') as f:
+                                enviar_mensaje(cs, f.read())
+                        return
+
+                # * Obtener tamaño y tipo de archivo
+                length = os.stat(ruta_absoluta).st_size
+                tipo_ext = route.split(".")[-1]
+                content_type = filetypes.get(tipo_ext, "application/octet-stream")
+
+                # * Enviar cabeceras de respuesta
+                if route == "/index.html":
+                    enviar_mensaje(cs, crear_respuesta_index(ruta_absoluta, cookie_counter))
+                else:
+                    enviar_mensaje(cs, crear_respuesta(ruta_absoluta))
+
+                # * Enviar archivo en bloques
+                with open(ruta_absoluta, 'rb') as f:
+                    remaining = length
+                    while remaining:
+                        chunk_size = min(remaining, BUFSIZE)
+                        buf = f.read(chunk_size)
+                        if not buf:
+                            break
+                        enviar_mensaje(cs, buf)
+                        remaining -= chunk_size
+                print('\n')
 
 
 def main():
@@ -359,12 +367,13 @@ def main():
             conn, addr = server_socket.accept()
             pid = os.fork()
             if pid == 0:
-                server_socket.close() #
+                cerrar_conexion(server_socket) # El hijo cierra el socket del padre
                 process_web_request(conn, args.webroot)
                 cerrar_conexion(conn)
+                sys.exit(0) # El hijo termina su ejecución para liberar recursos y evitar que ejecute el código del padre
                 break
             else:
-                conn.close()
+                cerrar_conexion(conn) # El padre cierra el socket del hijo y vuelve a esperar nuevas conexiones
     except KeyboardInterrupt:
         True
 
