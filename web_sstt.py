@@ -181,7 +181,7 @@ def process_cookies(headers,  cs):
 
     valor = int(m.group(1))
     if valor >= MAX_ACCESOS:
-        return MAX_ACCESOS
+        return MAX_ACCESOS + 1
     return valor + 1
 
 def process_web_request(cs, webroot):
@@ -281,7 +281,7 @@ def process_web_request(cs, webroot):
 
             # * Comprobar que el recurso existe
             if not os.path.isfile(ruta_absoluta):
-                print(f"Error 404 Not Found: {ruta_absoluta}")
+                print("Error 404 Not Found:" + ruta_absoluta)
                 ruta_absoluta = webroot + "/404.html"
                 if os.path.isfile(ruta_absoluta):
                     enviar_mensaje(cs, error_404(ruta_absoluta))
@@ -290,10 +290,10 @@ def process_web_request(cs, webroot):
                 return
 
             # * Procesamiento de cookies SOLO si el recurso es index.html
-            cookie_counter = 1
+            cookie_counter = 0
             if route == "/index.html":
                 cookie_counter = process_cookies(lista_cabeceras, cs)
-                if cookie_counter >= MAX_ACCESOS:
+                if cookie_counter > MAX_ACCESOS:
                     print("Error 403 Forbidden - Maximos accesos alcanzados")
                     ruta_absoluta_403 = webroot + "/403.html"
                     if os.path.isfile(ruta_absoluta_403):
