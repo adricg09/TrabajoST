@@ -19,7 +19,7 @@ from datetime import timezone
 BUFSIZE = 8192 # Tamaño máximo del buffer que se puede utilizar
 TIMEOUT_CONNECTION = 30 # Timout para la conexión persistente
 MAX_ACCESOS = 10
-CORREO=re.compile('adrian.cuervog%40um.es|ds.anishchenkohalkina%40um.es')
+CORREO=re.compile('adrian.cuervog%40cazaBugs1991.org|ds.anishchenkohalkina%40cazaBugs1991.org')
 FORMATO = re.compile('GET')
 
 # Extensiones admitidas (extension, name in HTTP)
